@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HKDSE Physics 終極互動學習系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+        body { font-family: 'Nunito', sans-serif; overscroll-behavior: none; background-color: #f9fafb; }
+        
+        .kahoot-btn { transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); position: relative; overflow: hidden; width: 100%; height: 100%; }
+        .kahoot-btn:active:not(:disabled) { transform: scale(0.95); }
+        .kahoot-btn::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 15%; background: rgba(0,0,0,0.2); }
+        .btn-red { background-color: #E21B3C; } .btn-blue { background-color: #1368CE; }
+        .btn-yellow { background-color: #D89E00; } .btn-green { background-color: #26890C; }
+        .btn-purple { background-color: #8C52FF; }
+
+        .btn-red:hover:not(:disabled) { background-color: #f32042; } .btn-blue:hover:not(:disabled) { background-color: #1776ea; }
+        .btn-yellow:hover:not(:disabled) { background-color: #f0af00; } .btn-green:hover:not(:disabled) { background-color: #2b9e0e; }
+        .btn-purple:hover:not(:disabled) { background-color: #9d6dff; }
+
+        .shape-icon { background-color: white; display: inline-block; }
+        .shape-triangle { clip-path: polygon(50% 10%, 0% 100%, 100% 100%); }
+        .shape-diamond { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
+        .shape-circle { border-radius: 50%; } .shape-square { border-radius: 10%; }
+        .shape-pentagon { clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%); }
+
+        .modal-overlay { backdrop-filter: blur(8px); animation: fadeIn 0.3s ease-out forwards; }
+        .dimmed { opacity: 0.3; filter: grayscale(80%); }
+        .highlighted { transform: scale(1.02); z-index: 10; box-shadow: 0 0 20px rgba(255,255,255,0.8); border: 4px solid white; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes pop { 0% { transform: scale(0.8); opacity: 0; } 50% { transform: scale(1.02); } 100% { transform: scale(1); opacity: 1; } }
+        .animate-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px;}
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #c7c7cc; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+    </style>
+</head>
+<body class="h-[100dvh] text-gray-800 overflow-hidden flex flex-col">
+
+    <!-- ========== 1. 上載與準備畫面 ========== -->
+    <div id="setup-screen" class="flex-1 w-full flex flex-col items-center justify-center p-4 md:p-6 overflow-y-auto">
+        <div class="max-w-3xl w-full bg-white rounded-3xl shadow-2xl p-6 md:p-10 transform transition-all relative">
+            <div class="text-center pb-6 mb-6 border-b border-gray-100">
+                <h1 class="text-3xl md:text-4xl font-black text-indigo-700 mb-4 tracking-tight">Kahoot! 物理學習測驗</h1>
+                <p class="text-gray-500 font-bold text-sm md:text-base">上載您的 PDF 試卷，系統將自動提取題目與詳解生成互動測驗。</p>
+            </div>
+
+            <div id="upload-section">
+                <div class="mb-6 md:mb-8 border-4 border-dashed border-indigo-200 bg-indigo-50/50 rounded-2xl p-6 md:p-10 text-center hover:bg-indigo-50 transition duration-300 cursor-pointer" onclick="document.getElementById('pdf-upload').click()">
+                    <label class="block text-gray-700 text-lg md:text-xl font-bold mb-2 cursor-pointer">
+                        <span class="text-indigo-600 underline decoration-4 underline-offset-4">點擊此處</span> 選擇 PDF 檔案
+                    </label>
+                    <input type="file" id="pdf-upload" accept="application/pdf" class="hidden">
+                    <p id="file-name-display" class="text-sm md:text-md text-gray-400 mt-3 font-bold">尚未選擇檔案</p>
+                </div>
+                <button id="parse-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xl md:text-2xl font-black py-4 md:py-5 px-4 rounded-2xl transition duration-300 shadow-xl disabled:opacity-50 uppercase tracking-wider">
+                    開始解析試卷
+                </button>
+            </div>
+
+            <div id="progress-container" class="mt-6 md:mt-8 hidden">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 id="status-text" class="text-sm md:text-lg font-bold text-gray-700">準備中...</h3>
+                    <span id="percent-text" class="text-lg md:text-xl font-black text-indigo-600">0%</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-4 md:h-6 overflow-hidden shadow-inner">
+                    <div id="progress-bar" class="bg-gradient-to-r from-indigo-500 to-purple-500 h-4 md:h-6 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div id="start-options" class="mt-6 md:mt-8 hidden animate-fadeIn border-t border-gray-200 pt-6">
+                <div class="bg-green-50 border-l-4 border-green-500 p-3 md:p-4 mb-4 md:mb-6 rounded-r-xl">
+                    <p class="text-green-700 font-bold text-sm md:text-base" id="parse-success-msg">成功提取 0 題！</p>
+                </div>
+                <label class="block text-gray-700 text-base md:text-lg font-bold mb-3">請選擇要從哪一題開始測驗：</label>
+                <select id="start-question-select" class="block w-full bg-white border border-gray-300 text-gray-700 py-3 md:py-4 px-4 pr-8 rounded-xl focus:outline-none focus:border-indigo-500 font-bold text-base md:text-lg mb-6 shadow-sm"></select>
+                <button id="begin-quiz-btn" class="w-full bg-green-500 hover:bg-green-600 text-white text-xl md:text-2xl font-black py-4 md:py-5 px-4 rounded-2xl transition duration-300 shadow-xl hover:shadow-2xl uppercase tracking-wider">
+                    正式開始測驗
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 2. 遊戲主畫面 ========== -->
+    <div id="quiz-screen" class="hidden flex-1 w-full flex-col bg-gray-50 overflow-hidden">
+        <div class="bg-white shadow-sm p-3 md:p-4 flex justify-between items-center shrink-0 z-10 border-b border-gray-200">
+            <div class="flex items-center gap-2 md:gap-4">
+                <button onclick="pauseQuiz()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-1.5 md:py-2 px-3 md:px-4 rounded-lg md:rounded-xl flex items-center gap-1 md:gap-2 transition text-sm md:text-base shadow-sm">
+                    <span>⏸️</span> <span class="hidden sm:inline">暫停 / 紀錄</span>
+                </button>
+                <div class="text-sm md:text-xl font-black text-gray-600 bg-gray-200 px-3 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl shadow-inner">
+                    <span id="q-counter" class="text-indigo-600">1 / 10</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 md:gap-6">
+                <div class="text-sm md:text-lg font-bold text-gray-500 flex items-center gap-1">⏱️ <span id="question-timer-display" class="font-mono">0.0s</span></div>
+                <div class="text-lg md:text-2xl font-black text-gray-800"><span class="hidden sm:inline">分數: </span><span id="score-display" class="text-green-600">0</span></div>
+            </div>
+        </div>
+
+        <div class="flex-1 min-h-0 flex items-center justify-center p-2 md:p-4 w-full max-w-5xl mx-auto">
+            <div class="bg-white p-2 rounded-xl md:rounded-3xl shadow-md w-full h-full flex items-center justify-center border-2 md:border-4 border-gray-100 relative overflow-hidden">
+                <img id="question-img" class="w-full h-full object-contain rounded-lg" src="" alt="Question" />
+            </div>
+        </div>
+
+        <div class="shrink-0 h-[38vh] md:h-[30vh] w-full max-w-4xl mx-auto px-2 md:px-6 pb-4 md:pb-6">
+            <div class="grid grid-cols-2 gap-2 md:gap-4 h-full">
+                <button class="kahoot-btn btn-red rounded-xl md:rounded-2xl flex items-center justify-between px-4 md:px-8 text-white shadow-md font-black" onclick="submitAnswer('A')" id="btn-A">
+                    <div class="shape-icon shape-triangle w-8 h-8 md:w-12 md:h-12 shrink-0"></div><span class="text-3xl md:text-5xl leading-none pt-1">A</span>
+                </button>
+                <button class="kahoot-btn btn-blue rounded-xl md:rounded-2xl flex items-center justify-between px-4 md:px-8 text-white shadow-md font-black" onclick="submitAnswer('B')" id="btn-B">
+                    <div class="shape-icon shape-diamond w-8 h-8 md:w-12 md:h-12 shrink-0"></div><span class="text-3xl md:text-5xl leading-none pt-1">B</span>
+                </button>
+                <button class="kahoot-btn btn-yellow rounded-xl md:rounded-2xl flex items-center justify-between px-4 md:px-8 text-white shadow-md font-black" onclick="submitAnswer('C')" id="btn-C">
+                    <div class="shape-icon shape-circle w-8 h-8 md:w-12 md:h-12 shrink-0"></div><span class="text-3xl md:text-5xl leading-none pt-1">C</span>
+                </button>
+                <button class="kahoot-btn btn-green rounded-xl md:rounded-2xl flex items-center justify-between px-4 md:px-8 text-white shadow-md font-black" onclick="submitAnswer('D')" id="btn-D">
+                    <div class="shape-icon shape-square w-8 h-8 md:w-12 md:h-12 shrink-0"></div><span class="text-3xl md:text-5xl leading-none pt-1">D</span>
+                </button>
+                <button class="kahoot-btn btn-purple rounded-xl md:rounded-2xl flex items-center justify-between px-4 md:px-16 text-white shadow-md font-black col-span-2" onclick="submitAnswer('E')" id="btn-E">
+                    <div class="shape-icon shape-pentagon w-8 h-8 md:w-12 md:h-12 shrink-0"></div><span class="text-3xl md:text-5xl leading-none pt-1">E</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 3. 回饋與詳解面板 ========== -->
+    <div id="feedback-modal" class="hidden fixed inset-0 modal-overlay z-40 bg-black/60 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-4xl max-h-[90dvh] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-pop">
+            <div id="feedback-header" class="p-4 md:p-6 text-center text-white text-3xl md:text-5xl font-black shrink-0">正確！</div>
+            <div class="p-4 flex-1 overflow-y-auto bg-gray-50 flex flex-col items-center">
+                <div id="feedback-rate-container" class="mb-4 bg-white px-6 py-2 rounded-full shadow-sm border border-gray-200 flex gap-4 text-sm md:text-lg font-bold">
+                    <span id="fb-correct-ans" class="text-gray-700">標準答案: C</span>
+                    <span class="text-gray-300 hidden sm:inline">|</span>
+                    <span id="fb-rate" class="text-indigo-600">答對率: 45%</span>
+                </div>
+                <p id="fb-no-exp-msg" class="text-gray-400 font-bold hidden my-10 text-center">本題未提供詳解圖塊。</p>
+                <div id="fb-img-container" class="w-full min-h-[150px] bg-white p-2 rounded-xl shadow-sm border-2 border-gray-100 flex items-center justify-center overflow-hidden">
+                    <img id="feedback-explanation-img" src="" class="w-full h-auto object-contain rounded">
+                </div>
+            </div>
+            <div class="p-4 bg-white border-t shrink-0">
+                <button onclick="nextQuestion()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl text-xl transition shadow-md">
+                    了解，前往下一題 ➔
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 4. 暫停與進度面板 ========== -->
+    <div id="pause-modal" class="hidden fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90dvh] flex flex-col overflow-hidden animate-pop">
+            <div class="bg-indigo-600 text-white p-4 md:p-6 flex justify-between items-center shrink-0">
+                <h2 class="text-xl md:text-3xl font-black">狀態與歷史檢討</h2>
+                <button onclick="resumeQuiz()" class="text-white hover:text-gray-200 text-3xl font-bold">&times;</button>
+            </div>
+            <div class="p-4 md:p-6 flex-grow overflow-y-auto">
+                <div class="grid grid-cols-3 gap-2 md:gap-4 mb-4 md:mb-6 text-center">
+                    <div class="bg-indigo-50 p-2 md:p-4 rounded-xl"><p class="text-gray-500 font-bold text-xs md:text-sm">得分</p><p class="text-xl md:text-3xl font-black text-indigo-600" id="pause-score">0</p></div>
+                    <div class="bg-green-50 p-2 md:p-4 rounded-xl"><p class="text-gray-500 font-bold text-xs md:text-sm">答對率</p><p class="text-xl md:text-3xl font-black text-green-600" id="pause-accuracy">0%</p></div>
+                    <div class="bg-blue-50 p-2 md:p-4 rounded-xl"><p class="text-gray-500 font-bold text-xs md:text-sm">已作答</p><p class="text-xl md:text-3xl font-black text-blue-600" id="pause-completed">0/0</p></div>
+                </div>
+                <h3 class="text-lg md:text-xl font-bold text-gray-700 mb-2 border-b pb-2">作答紀錄與圖文回顧</h3>
+                <div class="overflow-x-auto rounded-lg border border-gray-100">
+                    <table class="w-full text-left border-collapse min-w-[600px]">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600 text-xs md:text-sm uppercase tracking-wider">
+                                <th class="p-2 md:p-3">題號</th><th class="p-2 md:p-3 text-center">你</th><th class="p-2 md:p-3 text-center">正解</th>
+                                <th class="p-2 md:p-3 text-center text-indigo-600">%</th><th class="p-2 md:p-3 text-center">結果</th><th class="p-2 md:p-3 text-center">圖文詳解</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pause-review-table-body" class="text-gray-800 font-medium text-sm md:text-base"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-50 border-t flex gap-2 md:gap-4 shrink-0">
+                <button onclick="endQuizEarly()" class="flex-1 bg-red-100 text-red-700 font-black py-3 rounded-xl">結束看總結</button>
+                <button onclick="resumeQuiz()" class="flex-1 bg-indigo-600 text-white font-black py-3 rounded-xl">繼續測驗</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 5. 檢視歷史圖文專屬面板 ========== -->
+    <div id="history-img-modal" class="hidden fixed inset-0 modal-overlay z-[60] bg-black/80 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-5xl max-h-[90dvh] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-pop">
+            <div class="bg-gray-800 text-white p-4 flex justify-between items-center shrink-0">
+                <h2 class="text-xl font-black" id="hist-title">檢視題目與詳解</h2>
+                <button onclick="closeHistoryModal()" class="text-gray-300 hover:text-white text-3xl font-bold">&times;</button>
+            </div>
+            <div class="p-4 flex-1 overflow-y-auto bg-gray-100 flex flex-col gap-4">
+                <div class="bg-white p-2 rounded-xl shadow-sm border border-gray-200">
+                    <p class="text-xs font-bold text-gray-400 uppercase ml-2 mb-1">題目</p>
+                    <img id="hist-q-img" src="" class="w-full object-contain rounded">
+                </div>
+                <div class="bg-white p-2 rounded-xl shadow-sm border border-gray-200">
+                    <p class="text-xs font-bold text-gray-400 uppercase ml-2 mb-1">詳解</p>
+                    <p id="hist-no-exp" class="text-center text-gray-400 font-bold py-8 hidden">本題未提供詳解圖塊</p>
+                    <img id="hist-e-img" src="" class="w-full object-contain rounded">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 6. 最終結算畫面 ========== -->
+    <div id="result-screen" class="hidden flex-1 w-full flex-col bg-gray-100 overflow-y-auto">
+        <div class="max-w-4xl w-full mx-auto p-4 md:p-8">
+            <div class="bg-white rounded-3xl shadow-xl overflow-hidden animate-pop">
+                <div class="bg-gradient-to-br from-indigo-600 to-purple-700 p-6 md:p-10 text-center text-white">
+                    <h1 class="text-3xl md:text-5xl font-black mb-2">測驗完成！</h1>
+                    <p class="text-base md:text-xl font-bold opacity-90 mb-6">您的詳細分析報告</p>
+                    <div class="flex flex-wrap justify-center gap-3 md:gap-6">
+                        <div class="bg-white/20 backdrop-blur-sm p-4 md:p-6 rounded-2xl min-w-[120px]"><p class="text-xs uppercase opacity-80">分數</p><p class="text-3xl md:text-5xl font-black" id="final-score">0</p></div>
+                        <div class="bg-white/20 backdrop-blur-sm p-4 md:p-6 rounded-2xl min-w-[120px]"><p class="text-xs uppercase opacity-80">答對率</p><p class="text-3xl md:text-5xl font-black" id="final-accuracy">0%</p></div>
+                        <div class="bg-white/20 backdrop-blur-sm p-4 md:p-6 rounded-2xl min-w-[120px]"><p class="text-xs uppercase opacity-80">總耗時</p><p class="text-3xl md:text-5xl font-black" id="final-time">0s</p></div>
+                    </div>
+                </div>
+                <div class="p-4 md:p-10">
+                    <h2 class="text-xl md:text-2xl font-black text-gray-800 mb-4 flex items-center gap-2"><span>📝</span> 詳細檢討清單</h2>
+                    <div class="overflow-x-auto rounded-xl border border-gray-200">
+                        <table class="w-full text-left border-collapse min-w-[600px]">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-600 text-xs md:text-sm uppercase tracking-wider">
+                                    <th class="p-3 border-b">題號</th><th class="p-3 text-center border-b">你</th><th class="p-3 text-center border-b">正解</th>
+                                    <th class="p-3 text-center border-b text-indigo-600">答對率</th><th class="p-3 text-center border-b">結果</th><th class="p-3 text-center border-b">檢視</th>
+                                </tr>
+                            </thead>
+                            <tbody id="final-review-table-body" class="text-gray-800 font-bold text-sm md:text-base"></tbody>
+                        </table>
+                    </div>
+                    <button onclick="location.reload()" class="mt-8 w-full bg-indigo-600 text-white text-lg font-black py-4 rounded-2xl shadow-lg hover:bg-indigo-700 transition">載入新試卷</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('pdf-upload');
+        const fileNameDisplay = document.getElementById('file-name-display');
+        const parseBtn = document.getElementById('parse-btn');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const statusText = document.getElementById('status-text');
+        const percentText = document.getElementById('percent-text');
+        
+        const setupScreen = document.getElementById('setup-screen');
+        const startOptions = document.getElementById('start-options');
+        const startQuestionSelect = document.getElementById('start-question-select');
+        const beginQuizBtn = document.getElementById('begin-quiz-btn');
+        
+        const quizScreen = document.getElementById('quiz-screen');
+        const resultScreen = document.getElementById('result-screen');
+        const pauseModal = document.getElementById('pause-modal');
+        const feedbackModal = document.getElementById('feedback-modal');
+        const historyImgModal = document.getElementById('history-img-modal');
+
+        let quizData = []; 
+        let currentQuestionIndex = 0; let score = 0; let isAnswering = false;
+        let userAnswersHistory = []; let questionStartTime = 0; let pauseStartTime = 0; let liveTimerInterval = null;
+
+        fileInput.addEventListener('change', (e) => {
+            if(e.target.files.length > 0) {
+                fileNameDisplay.textContent = `📄 ${e.target.files[0].name}`;
+                fileNameDisplay.classList.add('text-indigo-600'); fileNameDisplay.classList.remove('text-gray-400');
+            }
+        });
+
+        const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 10));
+
+        // 核心裁切演算法
+        function trimCanvasBottom(canvas) {
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width, height = canvas.height;
+            const data = ctx.getImageData(0, 0, width, height).data;
+            let bottom = height;
+            for (let y = height - 1; y >= 0; y--) {
+                let isContentRow = false;
+                for (let x = 0; x < width; x++) {
+                    let index = (y * width + x) * 4;
+                    if (data[index+3] > 20 && (data[index] < 240 || data[index+1] < 240 || data[index+2] < 240)) { isContentRow = true; break; }
+                }
+                if (isContentRow) { bottom = y + 1; break; }
+            }
+            bottom = Math.min(bottom + 30, height); 
+            const newCanvas = document.createElement('canvas');
+            newCanvas.width = width; newCanvas.height = bottom;
+            newCanvas.getContext('2d').fillStyle = '#ffffff'; 
+            newCanvas.getContext('2d').fillRect(0, 0, width, bottom);
+            newCanvas.getContext('2d').drawImage(canvas, 0, 0, width, bottom, 0, 0, width, bottom);
+            return newCanvas;
+        }
+
+        // ============================================================================
+        // 階段一： 100% 完全鎖死的 ww.html 序列演算法
+        // ============================================================================
+        function validateSequence(candidates, lastTrack) {
+            let valid = []; let headingsToErase = [];
+            for (let i = 0; i < candidates.length; i++) {
+                let cand = candidates[i]; let isValid = false;
+
+                if (!lastTrack) {
+                    if ((cand.major === 1 && cand.minor === 1) || (cand.major === 1 && cand.minor === 1 && cand.sub === 1)) {
+                        isValid = true;
+                    }
+                } else {
+                    if (cand.major === lastTrack.major && cand.minor === lastTrack.minor && cand.sub === lastTrack.sub) {
+                        isValid = true;
+                    } 
+                    else if (cand.major === lastTrack.major) {
+                        if (cand.minor === lastTrack.minor + 1 && (!cand.sub || cand.sub === 1)) {
+                            isValid = true;
+                        } else if (cand.minor === lastTrack.minor && cand.sub === (lastTrack.sub || 0) + 1) {
+                            isValid = true;
+                        } else if (cand.minor > lastTrack.minor && cand.minor <= lastTrack.minor + 3 && (!cand.sub || cand.sub === 1)) {
+                            isValid = true; 
+                        }
+                    } 
+                    else if (cand.major === lastTrack.major + 1 && cand.minor === 1 && (!cand.sub || cand.sub === 1)) {
+                        isValid = true;
+                    }
+                }
+
+                if (isValid) {
+                    if (!cand.sub) {
+                        let nextCand = candidates[i+1];
+                        if (nextCand && nextCand.major === cand.major && nextCand.minor === cand.minor && nextCand.sub === 1) {
+                            headingsToErase.push(cand); continue; 
+                        }
+                    }
+                    valid.push(cand); lastTrack = { major: cand.major, minor: cand.minor, sub: cand.sub };
+                }
+            }
+            return { valid, headingsToErase, newLast: lastTrack };
+        }
+
+        async function extractQuestionsPhase1(pdf, totalPages) {
+            let rawQuestions = [];
+            let answerStartPage = -1;
+            const startPage = Math.min(3, totalPages);
+            let lastQ = null;
+
+            for (let i = startPage; i <= totalPages; i++) {
+                let p = Math.round(((i - startPage) / (totalPages - startPage)) * 30);
+                progressBar.style.width = `${p}%`; percentText.textContent = `${p}%`;
+                statusText.textContent = `階段 1/3: 完美提取題目 (頁 ${i})...`;
+                await yieldToMain();
+
+                const page = await pdf.getPage(i);
+                const scale = 2.0; 
+                const viewport = page.getViewport({ scale: scale });
+                const textContent = await page.getTextContent();
+                
+                let items = textContent.items.map(item => {
+                    let [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+                    return { str: item.str, x, y, height: item.transform[0] * scale };
+                });
+                items.sort((a, b) => { if (Math.abs(a.y - b.y) < 10) return a.x - b.x; return a.y - b.y; });
+
+                let lines = []; let curLine = []; let curY = -1;
+                let isAnswersReachedThisPage = false;
+
+                for (let item of items) {
+                    let strLow = item.str.toLowerCase();
+                    if (strLow.includes("suggested solution") || strLow.includes("explanation") || strLow.includes("answers") || strLow.includes("key")) {
+                        isAnswersReachedThisPage = true;
+                        if (answerStartPage === -1) answerStartPage = i;
+                        break; 
+                    }
+                    if (curY === -1 || Math.abs(item.y - curY) < 10) { curLine.push(item); curY = item.y; } 
+                    else { lines.push({ str: curLine.map(it => it.str).join('').trim(), y: curY, x: curLine[0].x }); curLine = [item]; curY = item.y; }
+                }
+                if (curLine.length > 0) lines.push({ str: curLine.map(it => it.str).join('').trim(), y: curY, x: curLine[0].x });
+
+                let headerY = 0; let footerY = viewport.height;
+                for (let line of lines) {
+                    let textLow = line.str.toLowerCase();
+                    if (line.y < viewport.height * 0.2) {
+                        if (textLow.includes("topic") || textLow.includes("physics") || textLow.includes("e&m") || textLow.includes("mc/")) headerY = Math.max(headerY, line.y + 15);
+                    }
+                    if (line.y > viewport.height * 0.8) {
+                        if (textLow.includes("lo sir") || textLow.includes("page")) footerY = Math.min(footerY, line.y - 30);
+                    }
+                }
+
+                let candidates = [];
+                for (let line of lines) {
+                    let m = line.str.match(/^(\d+)\s*\.\s*(\d+)(?:\s*\.\s*(\d+))?/);
+                    if (m && line.x < viewport.width * 0.4) {
+                        candidates.push({ major: parseInt(m[1]), minor: parseInt(m[2]), sub: m[3] ? parseInt(m[3]) : null, id: `${m[1]}.${m[2]}${m[3] ? '.'+m[3] : ''}`, y: line.y, str: line.str });
+                    }
+                }
+
+                let qRes = validateSequence(candidates, lastQ);
+                lastQ = qRes.newLast;
+
+                if (qRes.valid.length > 0) {
+                    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+                    canvas.width = viewport.width; canvas.height = viewport.height;
+                    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+                    ctx.fillStyle = '#ffffff';
+                    if (headerY > 0) ctx.fillRect(0, 0, canvas.width, headerY);
+                    if (footerY < canvas.height) ctx.fillRect(0, footerY, canvas.width, canvas.height - footerY);
+                    for (let h of qRes.headingsToErase) ctx.fillRect(0, h.y - 35, canvas.width, 50);
+
+                    for (let j = 0; j < qRes.valid.length; j++) {
+                        let startY = qRes.valid[j].y - 45; if (startY < 0) startY = 0;
+                        let endY = (j < qRes.valid.length - 1) ? qRes.valid[j+1].y - 45 : canvas.height;
+                        let sliceHeight = endY - startY; if (sliceHeight <= 20) continue;
+
+                        let sliceCanvas = document.createElement('canvas'); sliceCanvas.width = canvas.width; sliceCanvas.height = sliceHeight;
+                        let sCtx = sliceCanvas.getContext('2d');
+                        sCtx.fillStyle = '#ffffff'; sCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+                        sCtx.drawImage(canvas, 0, startY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+
+                        rawQuestions.push({ id: qRes.valid[j].id, image: trimCanvasBottom(sliceCanvas).toDataURL('image/jpeg', 0.95) });
+                    }
+                }
+                if (isAnswersReachedThisPage) break; 
+            }
+            return { rawQuestions, answerStartPage };
+        }
+
+        // ============================================================================
+        // 階段二： 純讀取答案 Table + 定位 Explanation
+        // ============================================================================
+        async function extractAnswersTablePhase2(pdf, totalPages, answerStartPage) {
+            let answerDict = {};
+            let expStartLoc = null; 
+            
+            if (answerStartPage === -1) return { answerDict, expStartLoc };
+
+            for (let i = answerStartPage; i <= totalPages; i++) {
+                let p = 30 + Math.round(((i - answerStartPage) / (totalPages - answerStartPage || 1)) * 30);
+                progressBar.style.width = `${p}%`; percentText.textContent = `${p}%`;
+                statusText.textContent = `階段 2/3: 掃描答案 Table (頁 ${i})...`;
+                await yieldToMain();
+
+                const page = await pdf.getPage(i);
+                const scale = 2.0; 
+                const viewport = page.getViewport({ scale: scale });
+                const textContent = await page.getTextContent();
+                
+                let items = textContent.items.map(item => {
+                    let [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+                    return { str: item.str, x, y };
+                });
+                items.sort((a, b) => { if (Math.abs(a.y - b.y) < 10) return a.x - b.x; return a.y - b.y; });
+
+                let lines = []; let curLine = []; let curY = -1;
+                for (let item of items) {
+                    if (curY === -1 || Math.abs(item.y - curY) < 10) { curLine.push(item); curY = item.y; } 
+                    else { lines.push({ str: curLine.map(it => it.str).join('').trim(), y: curY, x: curLine[0].x }); curLine = [item]; curY = item.y; }
+                }
+                if (curLine.length > 0) lines.push({ str: curLine.map(it => it.str).join('').trim(), y: curY, x: curLine[0].x });
+
+                for (let line of lines) {
+                    let s = line.str.toLowerCase();
+                    if (!expStartLoc && (s.includes('explanation') || s.includes('suggested solution'))) {
+                        expStartLoc = { page: i, y: line.y };
+                    }
+                    const regex = /(?:^|\s*)(\d+\.\d+(?:\.\d+)?)\s*([A-EX])(?:\s*\(\s*(\d{1,3}%?)\s*\))?/gi;
+                    let match;
+                    while ((match = regex.exec(line.str)) !== null) {
+                        let id = match[1];
+                        let ans = match[2].toUpperCase();
+                        let rate = match[3] ? (match[3].includes('%') ? match[3] : match[3]+'%') : null;
+                        answerDict[id] = { ans, rate };
+                    }
+                }
+            }
+            return { answerDict, expStartLoc };
+        }
+
+        // ============================================================================
+        // 階段三： 交叉比對錨點切圖法 (Cross-Reference Anchor Method)
+        // 徹底拋棄連續性驗證，100% 依賴已知的題目 ID 來精準下刀
+        // ============================================================================
+        async function extractExplanationsPhase3(pdf, totalPages, expStartLoc, answerStartPage, validQuestionIdsSet) {
+            let expDict = {};
+            let startP = expStartLoc ? expStartLoc.page : answerStartPage;
+            if (startP === -1) return expDict;
+
+            for (let i = startP; i <= totalPages; i++) {
+                let p = 60 + Math.round(((i - startP) / (totalPages - startP || 1)) * 40);
+                progressBar.style.width = `${p}%`; percentText.textContent = `${p}%`;
+                statusText.textContent = `階段 3/3: 交叉比對精準裁切詳解 (頁 ${i})...`;
+                await yieldToMain();
+
+                const page = await pdf.getPage(i);
+                const scale = 2.0; 
+                const viewport = page.getViewport({ scale: scale });
+                const textContent = await page.getTextContent();
+                
+                let items = textContent.items.map(item => {
+                    let [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+                    return { str: item.str, x, y };
+                });
+                items.sort((a, b) => { if (Math.abs(a.y - b.y) < 10) return a.x - b.x; return a.y - b.y; });
+
+                let lines = []; let curLine = []; let curY = -1;
+                for (let item of items) {
+                    if (curY === -1 || Math.abs(item.y - curY) < 10) { curLine.push(item); curY = item.y; } 
+                    else { lines.push({ str: curLine.map(it => it.str).join('').trim(), y: curY, x: curLine[0].x }); curLine = [item]; curY = item.y; }
+                }
+                if (curLine.length > 0) lines.push({ str: curLine.map(it => it.str).join('').trim(), y: curY, x: curLine[0].x });
+
+                // 收集本頁所有「已知合法」的錨點 (Anchors)
+                let pageAnchors = [];
+                for (let line of lines) {
+                    // 完美擋掉 Answer Table 的屏障
+                    if (expStartLoc && i === expStartLoc.page && line.y <= expStartLoc.y + 10) continue;
+
+                    let m = line.str.match(/^(\d+)\s*\.\s*(\d+)(?:\s*\.\s*(\d+))?/);
+                    if (m && line.x < viewport.width * 0.4) {
+                        let id = `${m[1]}.${m[2]}${m[3] ? '.'+m[3] : ''}`;
+                        // ★ 核心魔法：只採納「確實存在於題目中」的 ID 作為切割點，無視跳題，永不崩潰！
+                        if (validQuestionIdsSet.has(id)) {
+                            pageAnchors.push({ id: id, y: line.y, str: line.str });
+                        }
+                    }
+                }
+
+                if (pageAnchors.length > 0) {
+                    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+                    canvas.width = viewport.width; canvas.height = viewport.height;
+                    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+                    // 利用已知的 Anchor 進行切割，保留完美的 45px 頭部空間
+                    for (let j = 0; j < pageAnchors.length; j++) {
+                        let cand = pageAnchors[j];
+                        let startY = Math.max(0, cand.y - 45);
+                        let endY = (j < pageAnchors.length - 1) ? pageAnchors[j+1].y - 45 : canvas.height;
+                        let sliceHeight = endY - startY; 
+                        
+                        let inlineM = cand.str.match(/^(?:\d+\.\d+(?:\.\d+)?)\s*([A-EX])(?:\s*\(\s*(\d{1,3}%?)\s*\))?/i);
+                        let inlineAns = inlineM ? inlineM[1].toUpperCase() : null;
+                        let inlineRate = inlineM && inlineM[2] ? (inlineM[2].includes('%') ? inlineM[2] : inlineM[2]+'%') : null;
+
+                        // 判斷是否真的是圖片詳解 (高度 > 25px)
+                        if (sliceHeight > 25) {
+                            let sliceCanvas = document.createElement('canvas'); sliceCanvas.width = canvas.width; sliceCanvas.height = sliceHeight;
+                            let sCtx = sliceCanvas.getContext('2d');
+                            sCtx.fillStyle = '#ffffff'; sCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+                            sCtx.drawImage(canvas, 0, startY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+                            
+                            expDict[cand.id] = { ans: inlineAns, rate: inlineRate, image: trimCanvasBottom(sliceCanvas).toDataURL('image/jpeg', 0.95) };
+                        } else {
+                            expDict[cand.id] = { ans: inlineAns, rate: inlineRate, image: null };
+                        }
+                    }
+                }
+            }
+            return expDict;
+        }
+
+        parseBtn.addEventListener('click', async () => {
+            if (!fileInput.files.length) { alert('請選擇檔案！'); return; }
+            parseBtn.disabled = true; document.getElementById('upload-section').classList.add('hidden'); progressContainer.classList.remove('hidden');
+            
+            try {
+                const pdf = await pdfjsLib.getDocument({ data: await fileInput.files[0].arrayBuffer() }).promise;
+                
+                const { rawQuestions, answerStartPage } = await extractQuestionsPhase1(pdf, pdf.numPages);
+                if (rawQuestions.length === 0) throw new Error("未能找出任何題目。");
+
+                const validQuestionIdsSet = new Set(rawQuestions.map(q => q.id));
+
+                const { answerDict, expStartLoc } = await extractAnswersTablePhase2(pdf, pdf.numPages, answerStartPage);
+
+                const expDict = await extractExplanationsPhase3(pdf, pdf.numPages, expStartLoc, answerStartPage, validQuestionIdsSet);
+
+                statusText.textContent = `最終資料整合中...`;
+                progressBar.style.width = `100%`; percentText.textContent = `100%`;
+                await yieldToMain();
+
+                quizData = rawQuestions.map(q => {
+                    let ansTbl = answerDict[q.id];
+                    let expD = expDict[q.id];
+                    
+                    let finalAns = (expD && expD.ans) ? expD.ans : (ansTbl && ansTbl.ans ? ansTbl.ans : null);
+                    let finalRate = (expD && expD.rate) ? expD.rate : (ansTbl && ansTbl.rate ? ansTbl.rate : null);
+                    let finalImage = (expD && expD.image) ? expD.image : null;
+
+                    return { id: q.id, qImage: q.image, answer: finalAns, rate: finalRate, eImage: finalImage };
+                });
+
+                progressContainer.classList.add('hidden'); startOptions.classList.remove('hidden');
+                document.getElementById('parse-success-msg').innerText = `解析大成功！完美提取 ${quizData.length} 題。`;
+                
+                startQuestionSelect.innerHTML = '';
+                quizData.forEach((q, i) => {
+                    let opt = document.createElement('option'); opt.value = i;
+                    let info = '';
+                    if (q.answer === 'X') info = '(作廢題/自動送分)';
+                    else if (q.answer) info = q.rate ? `(答對率: ${q.rate})` : '';
+                    else info = '(無答案/自動送分)';
+
+                    opt.text = `第 ${i + 1} 題 - 題號: ${q.id} ${info}`;
+                    startQuestionSelect.appendChild(opt);
+                });
+                parseBtn.disabled = false;
+
+            } catch (error) { 
+                console.error(error); 
+                statusText.textContent = '發生錯誤！請重整頁面。'; 
+                alert("解析失敗：" + error.message);
+                parseBtn.disabled = false;
+            }
+        });
+
+        // ================= 遊戲互動與 UI 邏輯 =================
+        beginQuizBtn.addEventListener('click', () => {
+            currentQuestionIndex = parseInt(startQuestionSelect.value);
+            score = 0; userAnswersHistory = []; 
+            document.getElementById('setup-screen').classList.add('hidden'); quizScreen.classList.remove('hidden'); quizScreen.classList.add('flex');
+            loadQuestion();
+        });
+
+        function loadQuestion() {
+            isAnswering = false; const q = quizData[currentQuestionIndex];
+            document.getElementById('question-img').src = q.qImage;
+            document.getElementById('q-counter').innerText = `${currentQuestionIndex + 1} / ${quizData.length} (題 ${q.id})`;
+            document.getElementById('score-display').innerText = score;
+            
+            feedbackModal.classList.add('hidden'); 
+            ['A', 'B', 'C', 'D', 'E'].forEach(b => {
+                let btn = document.getElementById(`btn-${b}`); btn.disabled = false; btn.classList.remove('dimmed', 'highlighted');
+            });
+            
+            questionStartTime = Date.now(); startLiveTimer();
+        }
+
+        function startLiveTimer() {
+            clearInterval(liveTimerInterval);
+            liveTimerInterval = setInterval(() => { document.getElementById('question-timer-display').innerText = ((Date.now() - questionStartTime) / 1000).toFixed(1) + 's'; }, 100);
+        }
+
+        function submitAnswer(selOpt) {
+            if (isAnswering) return; isAnswering = true; clearInterval(liveTimerInterval);
+            const timeSpent = (Date.now() - questionStartTime) / 1000;
+            const q = quizData[currentQuestionIndex];
+            
+            const isX = (q.answer === 'X');
+            const isMissing = !q.answer || isX; 
+            const isCorrect = isMissing ? true : (selOpt === q.answer);
+            
+            userAnswersHistory.push({ index: currentQuestionIndex, id: q.id, userAns: selOpt, corrAns: q.answer || "-", isCorrect: isCorrect, isMissing: isMissing, isX: isX, rate: q.rate || "-", timeSpent: timeSpent });
+
+            ['A', 'B', 'C', 'D', 'E'].forEach(b => {
+                let btn = document.getElementById(`btn-${b}`); btn.disabled = true;
+                if (isMissing && b === selOpt) btn.classList.add('highlighted');
+                else if (!isMissing && b === q.answer) btn.classList.add('highlighted');
+                else btn.classList.add('dimmed');
+            });
+
+            const header = document.getElementById('feedback-header');
+            const rateContainer = document.getElementById('feedback-rate-container');
+            const imgContainer = document.getElementById('fb-img-container');
+            const imgElem = document.getElementById('feedback-explanation-img');
+            const noImgMsg = document.getElementById('fb-no-exp-msg');
+
+            if (isMissing) {
+                score += 1000; 
+                let subMsg = isX ? "本題為廢題或無答案 (X)" : "未提供標準答案";
+                header.innerHTML = `已記錄<br><span class="text-xl md:text-3xl mt-2 block">${subMsg}，自動送分</span>`; 
+                header.className = "p-4 md:p-6 text-center text-white text-3xl md:text-5xl font-black bg-blue-500 shrink-0";
+                rateContainer.classList.add('hidden');
+            } else {
+                rateContainer.classList.remove('hidden');
+                document.getElementById('fb-correct-ans').innerText = `標準答案: ${q.answer}`;
+                document.getElementById('fb-rate').innerText = q.rate ? `全港答對率: ${q.rate}` : "無答對率資料";
+                
+                if (isCorrect) { score += 1000; header.innerText = "正確！"; header.className = "p-4 md:p-6 text-center text-white text-3xl md:text-5xl font-black bg-green-500 shrink-0"; } 
+                else { header.innerText = "錯誤！"; header.className = "p-4 md:p-6 text-center text-white text-3xl md:text-5xl font-black bg-red-600 shrink-0"; }
+            }
+            document.getElementById('score-display').innerText = score;
+
+            if (q.eImage) {
+                imgElem.src = q.eImage; imgContainer.classList.remove('hidden'); noImgMsg.classList.add('hidden');
+            } else {
+                imgContainer.classList.add('hidden'); noImgMsg.classList.remove('hidden');
+            }
+
+            setTimeout(() => { feedbackModal.classList.remove('hidden'); }, 600);
+        }
+
+        function nextQuestion() {
+            currentQuestionIndex++;
+            if (currentQuestionIndex < quizData.length) loadQuestion(); else showFinalResult();
+        }
+
+        function pauseQuiz() {
+            if (isAnswering) return; clearInterval(liveTimerInterval); pauseStartTime = Date.now();
+            const valid = userAnswersHistory.filter(a => !a.isMissing).length;
+            const correct = userAnswersHistory.filter(a => a.isCorrect && !a.isMissing).length;
+            document.getElementById('pause-score').innerText = score;
+            document.getElementById('pause-accuracy').innerText = valid > 0 ? Math.round((correct/valid)*100)+'%' : '0%';
+            document.getElementById('pause-completed').innerText = `${userAnswersHistory.length}/${quizData.length}`;
+            renderReviewTable('pause-review-table-body'); pauseModal.classList.remove('hidden');
+        }
+
+        function resumeQuiz() { pauseModal.classList.add('hidden'); questionStartTime += (Date.now() - pauseStartTime); startLiveTimer(); }
+        function endQuizEarly() { pauseModal.classList.add('hidden'); showFinalResult(); }
+
+        function viewHistory(historyIndex) {
+            const histItem = userAnswersHistory[historyIndex];
+            const q = quizData[histItem.index];
+            
+            document.getElementById('hist-title').innerText = `檢視 Q ${q.id}`;
+            document.getElementById('hist-q-img').src = q.qImage;
+            
+            if (q.eImage) {
+                document.getElementById('hist-e-img').src = q.eImage;
+                document.getElementById('hist-e-img').classList.remove('hidden');
+                document.getElementById('hist-no-exp').classList.add('hidden');
+            } else {
+                document.getElementById('hist-e-img').classList.add('hidden');
+                document.getElementById('hist-no-exp').classList.remove('hidden');
+            }
+            
+            historyImgModal.classList.remove('hidden');
+        }
+
+        function closeHistoryModal() { historyImgModal.classList.add('hidden'); }
+
+        function renderReviewTable(id) {
+            const tbody = document.getElementById(id); tbody.innerHTML = '';
+            if (userAnswersHistory.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-gray-400">尚無作答</td></tr>`; return; }
+            userAnswersHistory.forEach((r, idx) => {
+                let status = r.isMissing ? `<span class="bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">送分${r.isX ? '(X)' : ''}</span>` : (r.isCorrect ? `<span class="bg-green-100 text-green-700 px-2 py-1 rounded font-bold">✅</span>` : `<span class="bg-red-100 text-red-700 px-2 py-1 rounded font-bold">❌</span>`);
+                let color = r.isCorrect || r.isMissing ? "text-green-600" : "text-red-600";
+                
+                let viewBtn = `<button onclick="viewHistory(${idx})" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1 rounded font-bold text-xs md:text-sm shadow-sm transition">🔍 檢視</button>`;
+
+                tbody.innerHTML += `<tr class="border-b border-gray-100">
+                    <td class="p-2 md:p-3 font-bold text-gray-700">Q ${r.id}</td><td class="p-2 md:p-3 text-center text-lg font-black ${color}">${r.userAns}</td>
+                    <td class="p-2 md:p-3 text-center text-lg font-black">${r.corrAns}</td><td class="p-2 md:p-3 text-center font-bold text-indigo-500">${r.rate}</td>
+                    <td class="p-2 md:p-3 text-center">${status}</td><td class="p-2 md:p-3 text-center">${viewBtn}</td>
+                </tr>`;
+            });
+        }
+
+        function showFinalResult() {
+            clearInterval(liveTimerInterval);
+            feedbackModal.classList.add('hidden'); quizScreen.classList.add('hidden'); quizScreen.classList.remove('flex'); resultScreen.classList.remove('hidden'); resultScreen.classList.add('flex');
+            const valid = userAnswersHistory.filter(a => !a.isMissing).length;
+            const correct = userAnswersHistory.filter(a => a.isCorrect && !a.isMissing).length;
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('final-accuracy').innerText = valid > 0 ? Math.round((correct/valid)*100)+'%' : '0%';
+            document.getElementById('final-time').innerText = userAnswersHistory.reduce((s, r) => s + r.timeSpent, 0).toFixed(1) + 's';
+            renderReviewTable('final-review-table-body');
+        }
+    </script>
+</body>
+</html>
